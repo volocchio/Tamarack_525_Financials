@@ -116,6 +116,13 @@ if mode == 'Sensitivity Study (3 Drivers, 1 Output)':
     st.stop()
 
 # Sidebar inputs
+st.sidebar.header('Project Selection')
+enable_525 = st.sidebar.checkbox('Enable 525 Winglet Project', value=True)
+enable_510 = st.sidebar.checkbox('Enable 510 Mustang Winglet Project', value=True)
+enable_604 = st.sidebar.checkbox('Enable Challenger 604 Family Project', value=True)
+enable_engineering = st.sidebar.checkbox('Enable Engineering Services', value=True)
+enable_starlink = st.sidebar.checkbox('Enable Starlink STC Project', value=True)
+
 st.sidebar.header('525 Winglet Sales Revenue')
 kit_price_base = st.sidebar.slider('Base 525 Winglet Price (2026, $k)', min_value=100, max_value=2000, value=250, step=50)
 kit_price_escalation = st.sidebar.slider('Annual Price Escalation (%)', min_value=0.0, max_value=10.0, value=2.0, step=0.5) / 100
@@ -157,6 +164,17 @@ st.sidebar.markdown('**TAM: 2,650 aircraft (525 + 510 series)**')
 units_starlink_2026 = st.sidebar.slider('2026 Target Starlink Sales (units)', min_value=0, max_value=100, value=10, step=1)
 penetration_starlink_2035 = st.sidebar.slider('2035 Target Starlink Penetration (%)', min_value=0, max_value=100, value=50, step=5)
 
+st.sidebar.header('Challenger 604 Family Winglet Sales Revenue')
+st.sidebar.markdown('**TAM: 1,200 existing (as of 2025) + 35 new/year**')
+kit_604_price_base = st.sidebar.slider('Base 604 Winglet Price (2027, $k)', min_value=100, max_value=1000, value=600, step=50)
+kit_604_price_escalation = st.sidebar.slider('Annual 604 Price Escalation (%)', min_value=0.0, max_value=10.0, value=2.0, step=0.5) / 100
+kit_604_cogs = st.sidebar.slider('604 Winglet COGS ($k)', min_value=50, max_value=500, value=150, step=10)
+kit_604_cert_cost = st.sidebar.slider('604 Certification Cost ($M)', min_value=0, max_value=30, value=16, step=1)
+
+st.sidebar.header('Challenger 604 Family Forecast (2027-2035)')
+units_604_2027 = st.sidebar.slider('2027 Target 604 Sales (units)', min_value=0, max_value=100, value=15, step=1)
+penetration_604_2035 = st.sidebar.slider('2035 Target 604 Penetration (%)', min_value=0, max_value=100, value=40, step=5)
+
 st.sidebar.header('Financial')
 opex_growth_rate = st.sidebar.slider('Annual OpEx Growth Rate (%)', min_value=0.0, max_value=10.0, value=3.0, step=0.5) / 100
 debt_amount = st.sidebar.slider('Max Debt Available ($M)', min_value=0.0, max_value=100.0, value=20.0, step=5.0)
@@ -183,9 +201,14 @@ historical_units = {
 # TAM constants
 base_tam_525 = 2200  # Existing M2/CJ1/CJ2/CJ3/CJ3+ aircraft
 base_tam_510 = 450
+base_tam_604 = 1200  # Existing Challenger 604/605/650 aircraft as of 2025
 base_tam_starlink = 2650  # All 525 series + 510
 new_525_per_year = 60  # New M2/CJ1/CJ2/CJ3/CJ3+ per year (winglet eligible)
 new_cj4_per_year = 31  # New CJ4 (525C) per year - Starlink only
+new_604_per_year = 35  # New Challenger 650 per year (same family as 604)
+
+# 604 Certification project (2-year project: 2026-2027)
+# $16M total certification cost split evenly over 2 years
 
 # 525 winglet forecast (2026-2035) - Annual sales ramping to achieve cumulative penetration target
 # Start with 218 already installed, add units_525_2026 in first year, ramp to hit penetration target by 2035
@@ -247,6 +270,25 @@ for i, yr in enumerate(range(2026, 2036)):
     cum_forecast_so_far = sum(starlink_forecast.get(y, 0) for y in range(2026, yr))
     starlink_forecast[yr] = max(0, target_cum_units - cum_forecast_so_far)
 
+# Challenger 604 family winglet forecast (2027-2035) - Annual sales ramping to achieve cumulative penetration target
+forecast_units_604 = {}
+for i, yr in enumerate(range(2027, 2036)):
+    years_elapsed = yr - 2027
+    total_years = 8  # 2027 to 2035
+    
+    # Calculate target cumulative units for this year
+    # TAM grows from 1200 (as of 2025) + new production from 2026 onwards
+    years_since_2025 = max(0, yr - 2025)
+    tam_yr = base_tam_604 + (new_604_per_year * years_since_2025)
+    
+    # Penetration ramps from 0% to target by 2035
+    target_penetration_yr = (penetration_604_2035 / 100.0) * (years_elapsed / total_years)
+    target_cum_units = int(tam_yr * target_penetration_yr)
+    
+    # Annual sales = target cumulative - previous forecast years
+    cum_forecast_so_far = sum(forecast_units_604.get(y, 0) for y in range(2027, yr))
+    forecast_units_604[yr] = max(0, target_cum_units - cum_forecast_so_far)
+
 # 510 Investor funding (all in 2026)
 # $5M for project/certification + $1M for inventory = $6M usable for operations
 # $2M for aircraft asset (not included, not usable for operations)
@@ -286,6 +328,11 @@ assumptions_rows = [
     {'Assumption': '510 Winglet COGS', 'Value': f"{kit_510_cogs}", 'Units': '$k/winglet', 'Type': 'Slider', 'Notes': 'Fixed COGS per 510 winglet'},
     {'Assumption': '510 Winglet TAM', 'Value': '450', 'Units': 'aircraft', 'Type': 'Hardwired', 'Notes': 'Total 510 Mustang aircraft (no longer produced)'},
     {'Assumption': '510 Investor Funding', 'Value': '6.0', 'Units': '$M', 'Type': 'Hardwired', 'Notes': 'Investment in 2026 for 510 project ($5M) and inventory ($1M), flows to bottom line'},
+    {'Assumption': 'Base 604 Winglet Price (2027)', 'Value': f"{kit_604_price_base}", 'Units': '$k/winglet', 'Type': 'Slider', 'Notes': 'Starting 604 winglet price in 2027'},
+    {'Assumption': 'Annual 604 Price Escalation', 'Value': f"{kit_604_price_escalation * 100:.1f}%", 'Units': '%', 'Type': 'Slider', 'Notes': 'Applied to 604 winglet price each year'},
+    {'Assumption': '604 Winglet COGS', 'Value': f"{kit_604_cogs}", 'Units': '$k/winglet', 'Type': 'Slider', 'Notes': 'Fixed COGS per 604 winglet'},
+    {'Assumption': '604 Winglet TAM', 'Value': '1,200 + 35/yr', 'Units': 'aircraft', 'Type': 'Hardwired', 'Notes': '1,200 existing Challenger 604/605/650 as of 2025 + 35 new Challenger 650 per year from 2026'},
+    {'Assumption': '604 Certification Cost', 'Value': f"{kit_604_cert_cost:.1f}", 'Units': '$M', 'Type': 'Slider', 'Notes': '2-year certification project (2026-2027), $8M per year'},
     {'Assumption': 'Engineering Billing Rate', 'Value': f"{eng_rate}", 'Units': '$/hr', 'Type': 'Slider', 'Notes': 'Revenue per billable hour'},
     {'Assumption': 'Engineering Cost per Hour', 'Value': f"{eng_cost_per_hour}", 'Units': '$/hr', 'Type': 'Slider', 'Notes': 'Direct cost per billable hour'},
     {'Assumption': 'Engineering Overhead', 'Value': f"{eng_overhead_pct * 100:.1f}%", 'Units': '%', 'Type': 'Slider', 'Notes': 'Overhead applied to engineering direct costs'},
@@ -326,6 +373,7 @@ term_years = int(debt_term_years)
 # Market tracking
 cum_winglet_units = 218  # 218 of 2200 already installed before 2016
 cum_winglet_510_units = 0
+cum_winglet_604_units = 0
 cum_starlink_units = 0
 
 for yr in years:
@@ -383,6 +431,35 @@ for yr in years:
     eng_overhead = eng_direct_cost * eng_overhead_pct
     eng_cogs_total = eng_direct_cost + eng_overhead
     
+    # Challenger 604 family winglet sales (starts 2027)
+    if yr in forecast_units_604:
+        units_604 = forecast_units_604[yr]
+    else:
+        units_604 = 0
+    
+    # 604 pricing (starts in 2027, escalates annually)
+    kit_604_year_idx = max(0, yr - 2027)
+    kit_604_price = (kit_604_price_base * 1000.0) * ((1 + kit_604_price_escalation) ** kit_604_year_idx)
+    kit_604_cogs_unit = kit_604_cogs * 1000.0
+    
+    kit_604_revenue = units_604 * kit_604_price / 1e6
+    kit_604_cogs_total = units_604 * kit_604_cogs_unit / 1e6
+    
+    # Cumulative 604 winglet tracking
+    if yr >= 2027:
+        cum_winglet_604_units += units_604
+    # TAM calculation: 1200 as of 2025, then add new production from 2026 onwards
+    years_since_2025 = max(0, yr - 2025)
+    winglet_604_tam = base_tam_604 + (new_604_per_year * years_since_2025)
+    winglet_604_penetration = (cum_winglet_604_units / winglet_604_tam * 100) if winglet_604_tam > 0 else 0.0
+    
+    # 604 Certification costs (2-year project: 2026-2027, $8M per year)
+    cert_604_cost = 0.0
+    if yr == 2026:
+        cert_604_cost = kit_604_cert_cost / 2.0  # Half in 2026
+    elif yr == 2027:
+        cert_604_cost = kit_604_cert_cost / 2.0  # Half in 2027
+    
     # Starlink STC sales
     if yr in starlink_forecast:
         starlink_units = starlink_forecast[yr]
@@ -407,9 +484,27 @@ for yr in years:
     starlink_tam = base_tam_starlink + ((new_525_per_year + new_cj4_per_year) * max(0, yr - 2016))
     starlink_penetration = (cum_starlink_units / starlink_tam * 100) if starlink_tam > 0 else 0.0
     
+    # Apply project enable/disable flags
+    if not enable_525:
+        kit_revenue = 0.0
+        kit_cogs_total = 0.0
+    if not enable_510:
+        kit_510_revenue = 0.0
+        kit_510_cogs_total = 0.0
+    if not enable_604:
+        kit_604_revenue = 0.0
+        kit_604_cogs_total = 0.0
+    if not enable_engineering:
+        eng_revenue = 0.0
+        eng_cogs_total = 0.0
+    if not enable_starlink:
+        starlink_revenue = 0.0
+        starlink_cogs_total = 0.0
+        starlink_eng_cost = 0.0
+    
     # Total revenue and COGS
-    revenue = kit_revenue + kit_510_revenue + eng_revenue + starlink_revenue
-    cogs = kit_cogs_total + kit_510_cogs_total + eng_cogs_total + starlink_cogs_total + starlink_eng_cost
+    revenue = kit_revenue + kit_510_revenue + kit_604_revenue + eng_revenue + starlink_revenue
+    cogs = kit_cogs_total + kit_510_cogs_total + kit_604_cogs_total + eng_cogs_total + starlink_cogs_total + starlink_eng_cost + cert_604_cost
     gross_profit = revenue - cogs
     
     # OpEx
@@ -473,6 +568,12 @@ for yr in years:
         '510 Mkt Pen (%)': round(winglet_510_penetration, 1),
         '510 Revenue ($M)': round(kit_510_revenue, 2),
         '510 COGS ($M)': round(kit_510_cogs_total, 2),
+        '604 Winglet Units': int(units_604),
+        'Cum 604 Winglets': int(cum_winglet_604_units),
+        '604 Mkt Pen (%)': round(winglet_604_penetration, 1),
+        '604 Revenue ($M)': round(kit_604_revenue, 2),
+        '604 COGS ($M)': round(kit_604_cogs_total, 2),
+        '604 Cert Cost ($M)': round(cert_604_cost, 2),
         'Eng Hours (k)': round(eng_hours / 1000.0, 1) if yr >= 2026 else 0.0,
         'Eng Revenue ($M)': round(eng_revenue, 2),
         'Eng COGS ($M)': round(eng_cogs_total, 2),
@@ -618,16 +719,17 @@ fig_rev, ax_rev = plt.subplots(1, 1, figsize=(14, 6))
 x_forecast = np.arange(len(forecast_years))
 width_rev = 0.2
 
-ax_rev.bar(x_forecast - 1.5*width_rev, df_forecast['525 Revenue ($M)'], width=width_rev, color='#FF6B6B', label='525 Winglet Revenue')
-ax_rev.bar(x_forecast - 0.5*width_rev, df_forecast['510 Revenue ($M)'], width=width_rev, color='#FF9999', label='510 Winglet Revenue')
-ax_rev.bar(x_forecast + 0.5*width_rev, df_forecast['Eng Revenue ($M)'], width=width_rev, color='#4ECDC4', label='Engineering Revenue')
-ax_rev.bar(x_forecast + 1.5*width_rev, df_forecast['Starlink Revenue ($M)'], width=width_rev, color='#95E1D3', label='Starlink Revenue')
+ax_rev.bar(x_forecast - 2*width_rev, df_forecast['525 Revenue ($M)'], width=width_rev, color='#FF6B6B', label='525 Winglet Revenue')
+ax_rev.bar(x_forecast - width_rev, df_forecast['510 Revenue ($M)'], width=width_rev, color='#FF9999', label='510 Winglet Revenue')
+ax_rev.bar(x_forecast, df_forecast['604 Revenue ($M)'], width=width_rev, color='#FFA07A', label='604 Winglet Revenue')
+ax_rev.bar(x_forecast + width_rev, df_forecast['Eng Revenue ($M)'], width=width_rev, color='#4ECDC4', label='Engineering Revenue')
+ax_rev.bar(x_forecast + 2*width_rev, df_forecast['Starlink Revenue ($M)'], width=width_rev, color='#95E1D3', label='Starlink Revenue')
 ax_rev.set_title('Revenue Breakdown by Source (2026-2035)')
 ax_rev.set_ylabel('$M')
 ax_rev.set_xlabel('Year')
 ax_rev.set_xticks(x_forecast)
 ax_rev.set_xticklabels(forecast_years, rotation=45, ha='right')
-ax_rev.legend(ncol=4)
+ax_rev.legend(ncol=5, fontsize=9)
 ax_rev.grid(True, linestyle='--', alpha=0.7)
 
 plt.tight_layout()
