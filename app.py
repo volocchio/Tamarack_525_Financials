@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from io import BytesIO
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Any
+import json
 
 from app_sense import render_sensitivity_app
 
@@ -24,6 +25,48 @@ with col_img_2:
         st.image(str(_img_logo), width=500)
 
 st.title('Tamarack 525 Financial Model')
+
+# Hull values for airplane models (average market values in $M)
+HULL_VALUES = {
+    '525': 4.5,  # Average hull value for CJ1/CJ2/CJ3/M2 series
+    '510': 2.5,  # Average hull value for Citation Mustang
+    '604': 12.0,  # Average hull value for Challenger 604/605/650
+    'CJ4': 9.0,  # Average hull value for CJ4
+}
+
+# Custom projects file path
+CUSTOM_PROJECTS_FILE = Path(__file__).resolve().parent / 'custom_projects.json'
+
+def load_custom_projects() -> List[Dict[str, Any]]:
+    """Load custom airplane projects from JSON file."""
+    if CUSTOM_PROJECTS_FILE.exists():
+        try:
+            with open(CUSTOM_PROJECTS_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            st.warning(f"Error loading custom projects: {e}")
+            return []
+    return []
+
+def save_custom_projects(projects: List[Dict[str, Any]]) -> None:
+    """Save custom airplane projects to JSON file."""
+    try:
+        with open(CUSTOM_PROJECTS_FILE, 'w') as f:
+            json.dump(projects, f, indent=2)
+    except Exception as e:
+        st.error(f"Error saving custom projects: {e}")
+
+def add_custom_project(project_data: Dict[str, Any]) -> None:
+    """Add a new custom project to the JSON file."""
+    projects = load_custom_projects()
+    projects.append(project_data)
+    save_custom_projects(projects)
+
+def delete_custom_project(project_name: str) -> None:
+    """Delete a custom project from the JSON file."""
+    projects = load_custom_projects()
+    projects = [p for p in projects if p.get('name') != project_name]
+    save_custom_projects(projects)
 
 st.markdown(
     """
@@ -91,9 +134,73 @@ div[data-testid="stDataFrame"] th {
     unsafe_allow_html=True,
 )
 
+# Load custom projects
+custom_projects = load_custom_projects()
+
 # Project Selection Buttons at Top
 st.subheader('Project Selection')
-col_proj1, col_proj2, col_proj3, col_proj4, col_proj5 = st.columns(5)
+
+# Add custom project UI
+with st.expander("➕ Add New Custom Airplane Project", expanded=False):
+    st.markdown("**Create a new airplane project with custom parameters**")
+    
+    col_new1, col_new2 = st.columns(2)
+    with col_new1:
+        new_project_name = st.text_input("Project Name (e.g., 'CJ4', 'Phenom 300')", key="new_proj_name")
+        new_tam = st.number_input("TAM (Total Addressable Market)", min_value=0, value=500, step=50, key="new_tam")
+        new_hull_value = st.number_input("Average Hull Value ($M)", min_value=0.0, value=9.0, step=0.5, key="new_hull")
+        new_price_base = st.number_input("Base Winglet Price ($k)", min_value=0, value=300, step=50, key="new_price")
+    
+    with col_new2:
+        new_cogs = st.number_input("COGS per Unit ($k)", min_value=0, value=150, step=25, key="new_cogs")
+        new_cert_start_year = st.number_input("Certification Start Year", min_value=2026, max_value=2030, value=2026, step=1, key="new_cert_year")
+        new_cert_duration_qtrs = st.number_input("Certification Duration (Quarters)", min_value=1, max_value=20, value=8, step=1, key="new_cert_qtrs")
+        new_cert_cost = st.number_input("Certification Cost ($M)", min_value=0.0, value=10.0, step=1.0, key="new_cert_cost")
+    
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        if st.button("💾 Save Project", type="primary"):
+            if new_project_name:
+                project_data = {
+                    'name': new_project_name,
+                    'tam': new_tam,
+                    'hull_value': new_hull_value,
+                    'price_base': new_price_base,
+                    'cogs': new_cogs,
+                    'cert_start_year': new_cert_start_year,
+                    'cert_duration_qtrs': new_cert_duration_qtrs,
+                    'cert_cost': new_cert_cost,
+                }
+                add_custom_project(project_data)
+                st.success(f"✅ Project '{new_project_name}' saved successfully!")
+                st.rerun()
+            else:
+                st.error("Please enter a project name")
+
+# Display existing custom projects with delete option
+if custom_projects:
+    with st.expander("📋 Manage Custom Projects", expanded=False):
+        for proj in custom_projects:
+            col_info, col_del = st.columns([5, 1])
+            with col_info:
+                st.markdown(f"**{proj['name']}** - TAM: {proj['tam']}, Hull: ${proj['hull_value']}M, Price: ${proj['price_base']}k")
+            with col_del:
+                if st.button(f"🗑️ Delete", key=f"del_{proj['name']}"):
+                    delete_custom_project(proj['name'])
+                    st.success(f"Deleted {proj['name']}")
+                    st.rerun()
+
+# Standard projects
+num_standard_cols = 5
+num_custom_cols = len(custom_projects)
+total_cols = num_standard_cols + num_custom_cols
+
+if total_cols <= 5:
+    cols = st.columns(total_cols)
+else:
+    cols = st.columns(total_cols)
+
+col_proj1, col_proj2, col_proj3, col_proj4, col_proj5 = cols[0], cols[1], cols[2], cols[3], cols[4]
 with col_proj1:
     enable_525 = st.checkbox('✈️ 525 Winglet', value=True, help='Enable 525 Winglet Project')
 with col_proj2:
@@ -104,6 +211,17 @@ with col_proj4:
     enable_starlink = st.checkbox('🛰️ Starlink STC', value=True, help='Enable Starlink STC Project')
 with col_proj5:
     enable_engineering = st.checkbox('🔧 Engineering', value=True, help='Enable Engineering Services')
+
+# Custom project checkboxes
+custom_project_enabled = {}
+for i, proj in enumerate(custom_projects):
+    if i + num_standard_cols < len(cols):
+        with cols[i + num_standard_cols]:
+            custom_project_enabled[proj['name']] = st.checkbox(
+                f"✈️ {proj['name']}", 
+                value=True, 
+                help=f"Enable {proj['name']} Project"
+            )
 
 st.divider()
 
@@ -132,6 +250,11 @@ if mode == 'Sensitivity Study (3 Drivers, 1 Output)':
     st.stop()
 
 # Sidebar inputs - only show for enabled projects
+# Global aircraft project settings
+st.sidebar.header('Aircraft Projects - Global Settings')
+aircraft_price_escalation = st.sidebar.slider('Aircraft Winglet Price Escalation (%)', min_value=0.0, max_value=10.0, value=2.0, step=0.5, help='Annual price escalation for all aircraft winglet projects') / 100
+aircraft_cogs_escalation = st.sidebar.slider('Aircraft Winglet COGS Escalation (%)', min_value=0.0, max_value=10.0, value=3.0, step=0.5, help='Annual COGS escalation for all aircraft winglet projects') / 100
+
 # Set default values for all projects
 mustang_cert_start_year = 2026
 mustang_cert_start_qtr = 1
@@ -183,10 +306,9 @@ if enable_604:
 
 if enable_525:
     st.sidebar.header('525 Winglet Sales Revenue')
+    st.sidebar.markdown(f'**Average Hull Value: ${HULL_VALUES["525"]}M**')
     kit_price_base = st.sidebar.slider('Base 525 Winglet Price (2026, $k)', min_value=100, max_value=2000, value=250, step=50)
-    kit_price_escalation = st.sidebar.slider('Annual Price Escalation (%)', min_value=0.0, max_value=10.0, value=2.0, step=0.5) / 100
     base_cogs_k = st.sidebar.slider('Base COGS per 525 Winglet (2026, $k)', min_value=50, max_value=1000, value=125, step=25)
-    cogs_escalation = st.sidebar.slider('Annual COGS Escalation (%)', min_value=0.0, max_value=10.0, value=3.0, step=0.5) / 100
     
     st.sidebar.header('525 Winglet Sales Forecast (2026-2035)')
     st.sidebar.markdown('**TAM: 2,200 existing + 60 new/year (excludes CJ4)**')
@@ -194,14 +316,13 @@ if enable_525:
     penetration_525_2035 = st.sidebar.slider('2035 Target 525 Penetration (%)', min_value=0, max_value=100, value=50, step=5)
 else:
     kit_price_base = 250
-    kit_price_escalation = 0.02
     base_cogs_k = 125
-    cogs_escalation = 0.03
     units_525_2026 = 20
     penetration_525_2035 = 50
 
 if enable_510:
     st.sidebar.header('510 Mustang Winglet Sales Revenue')
+    st.sidebar.markdown(f'**Average Hull Value: ${HULL_VALUES["510"]}M**')
     st.sidebar.markdown(f'**TAM: 450 aircraft (no longer produced) | Cert: {mustang_cert_start_year} Q{mustang_cert_start_qtr} ({mustang_cert_duration_qtrs}Q) | Revenue: {mustang_revenue_start_year}+**')
     kit_510_price_base = st.sidebar.slider(f'Base 510 Winglet Price ({mustang_revenue_start_year}, $k)', min_value=100, max_value=500, value=225, step=25)
     kit_510_cogs = st.sidebar.slider('510 Winglet COGS ($k)', min_value=50, max_value=300, value=100, step=10)
@@ -252,9 +373,9 @@ else:
 
 if enable_604:
     st.sidebar.header('Challenger 604 Family Winglet Sales Revenue')
+    st.sidebar.markdown(f'**Average Hull Value: ${HULL_VALUES["604"]}M**')
     st.sidebar.markdown(f'**TAM: 1,200 existing (as of 2025) + 35 new/year | Cert: {challenger_cert_start_year} Q{challenger_cert_start_qtr} ({challenger_cert_duration_qtrs}Q) | Revenue: {challenger_revenue_start_year}+**')
     kit_604_price_base = st.sidebar.slider(f'Base 604 Winglet Price ({challenger_revenue_start_year}, $k)', min_value=100, max_value=1000, value=600, step=50)
-    kit_604_price_escalation = st.sidebar.slider('Annual 604 Price Escalation (%)', min_value=0.0, max_value=10.0, value=2.0, step=0.5) / 100
     kit_604_cogs = st.sidebar.slider('604 Winglet COGS ($k)', min_value=50, max_value=500, value=150, step=10)
     
     st.sidebar.header(f'Challenger 604 Family Forecast ({challenger_revenue_start_year}-2035)')
@@ -262,12 +383,52 @@ if enable_604:
     penetration_604_2035 = st.sidebar.slider('2035 Target 604 Penetration (%)', min_value=0, max_value=100, value=40, step=5)
 else:
     kit_604_price_base = 600
-    kit_604_price_escalation = 0.02
     kit_604_cogs = 150
     units_604_start = 15
     penetration_604_2035 = 40
 
+# Custom projects sidebar inputs
+custom_project_params = {}
+for proj in custom_projects:
+    if custom_project_enabled.get(proj['name'], False):
+        proj_name = proj['name']
+        cert_duration_years = proj['cert_duration_qtrs'] / 4.0
+        revenue_start_year = int(proj['cert_start_year'] + cert_duration_years)
+        
+        st.sidebar.header(f"{proj_name} Project Timeline")
+        custom_cert_start_year = st.sidebar.slider(f'{proj_name} Certification Start Year', min_value=2026, max_value=2030, value=proj['cert_start_year'], step=1, key=f"cert_start_{proj_name}")
+        custom_cert_duration_qtrs = st.sidebar.slider(f'{proj_name} Certification Duration (Quarters)', min_value=1, max_value=20, value=proj['cert_duration_qtrs'], step=1, key=f"cert_dur_{proj_name}")
+        custom_cert_cost = st.sidebar.slider(f'{proj_name} Certification Cost ($M)', min_value=0.0, max_value=30.0, value=float(proj['cert_cost']), step=1.0, key=f"cert_cost_{proj_name}")
+        custom_cert_duration_years = custom_cert_duration_qtrs / 4.0
+        custom_revenue_start_year = int(custom_cert_start_year + custom_cert_duration_years)
+        
+        st.sidebar.header(f'{proj_name} Winglet Sales Revenue')
+        st.sidebar.markdown(f'**Average Hull Value: ${proj["hull_value"]}M**')
+        st.sidebar.markdown(f'**TAM: {proj["tam"]} aircraft | Cert: {custom_cert_start_year} ({custom_cert_duration_qtrs}Q) | Revenue: {custom_revenue_start_year}+**')
+        custom_price_base = st.sidebar.slider(f'Base {proj_name} Winglet Price ({custom_revenue_start_year}, $k)', min_value=100, max_value=2000, value=proj['price_base'], step=50, key=f"price_{proj_name}")
+        custom_cogs = st.sidebar.slider(f'{proj_name} Winglet COGS ($k)', min_value=50, max_value=1000, value=proj['cogs'], step=10, key=f"cogs_{proj_name}")
+        
+        st.sidebar.header(f'{proj_name} Winglet Forecast ({custom_revenue_start_year}-2035)')
+        custom_units_start = st.sidebar.slider(f'{custom_revenue_start_year} Target {proj_name} Sales (units)', min_value=0, max_value=100, value=15, step=1, key=f"units_{proj_name}")
+        custom_penetration_2035 = st.sidebar.slider(f'2035 Target {proj_name} Penetration (%)', min_value=0, max_value=100, value=40, step=5, key=f"pen_{proj_name}")
+        
+        custom_project_params[proj_name] = {
+            'tam': proj['tam'],
+            'hull_value': proj['hull_value'],
+            'price_base': custom_price_base,
+            'price_escalation': aircraft_price_escalation,
+            'cogs': custom_cogs,
+            'cert_start_year': custom_cert_start_year,
+            'cert_duration_qtrs': custom_cert_duration_qtrs,
+            'cert_cost': custom_cert_cost,
+            'cert_duration_years': custom_cert_duration_years,
+            'revenue_start_year': custom_revenue_start_year,
+            'units_start': custom_units_start,
+            'penetration_2035': custom_penetration_2035,
+        }
+
 st.sidebar.header('Financial')
+project_overhead_rate = st.sidebar.slider('Project Overhead Rate (%)', min_value=0.0, max_value=30.0, value=10.0, step=1.0, help='Administrative overhead as % of project revenue') / 100
 opex_growth_rate = st.sidebar.slider('Annual OpEx Growth Rate (%)', min_value=0.0, max_value=10.0, value=3.0, step=0.5) / 100
 debt_amount = st.sidebar.slider('Max Debt Available ($M)', min_value=0.0, max_value=100.0, value=20.0, step=5.0)
 debt_apr = st.sidebar.slider('Debt APR (%)', min_value=0.0, max_value=20.0, value=8.0, step=0.5) / 100
@@ -381,6 +542,26 @@ for i, yr in enumerate(range(challenger_revenue_start_year, 2036)):
     cum_forecast_so_far = sum(forecast_units_604.get(y, 0) for y in range(challenger_revenue_start_year, yr))
     forecast_units_604[yr] = max(0, target_cum_units - cum_forecast_so_far)
 
+# Custom projects forecasts
+custom_forecasts = {}
+for proj_name, params in custom_project_params.items():
+    forecast_units_custom = {}
+    revenue_start = params['revenue_start_year']
+    
+    for i, yr in enumerate(range(revenue_start, 2036)):
+        years_elapsed = yr - revenue_start
+        total_years = 2035 - revenue_start
+        
+        # Penetration ramps from 0% to target by 2035
+        target_penetration_yr = (params['penetration_2035'] / 100.0) * (years_elapsed / total_years) if total_years > 0 else 0.0
+        target_cum_units = int(params['tam'] * target_penetration_yr)
+        
+        # Annual sales = target cumulative - previous forecast years
+        cum_forecast_so_far = sum(forecast_units_custom.get(y, 0) for y in range(revenue_start, yr))
+        forecast_units_custom[yr] = max(0, target_cum_units - cum_forecast_so_far)
+    
+    custom_forecasts[proj_name] = forecast_units_custom
+
 # 510 Investor funding (received in first year of certification)
 # $1M for inventory = $1M usable for operations (certification costs now handled separately via mustang_cert_cost)
 investor_510_funding = 1.0  # $1M for inventory
@@ -410,10 +591,10 @@ years = list(range(2016, 2036))  # 20 years
 
 # Build assumptions table
 assumptions_rows = [
+    {'Assumption': 'Aircraft Winglet Price Escalation', 'Value': f"{aircraft_price_escalation * 100:.1f}%", 'Units': '%', 'Type': 'Slider', 'Notes': 'Annual price escalation for all aircraft winglet projects (525, 510, 604, custom)'},
+    {'Assumption': 'Aircraft Winglet COGS Escalation', 'Value': f"{aircraft_cogs_escalation * 100:.1f}%", 'Units': '%', 'Type': 'Slider', 'Notes': 'Annual COGS escalation for all aircraft winglet projects (525, 510, 604, custom)'},
     {'Assumption': 'Base 525 Winglet Price (2026)', 'Value': f"{kit_price_base}", 'Units': '$k/winglet', 'Type': 'Slider', 'Notes': 'Starting 525 winglet price in 2026'},
-    {'Assumption': 'Annual 525 Price Escalation', 'Value': f"{kit_price_escalation * 100:.1f}%", 'Units': '%', 'Type': 'Slider', 'Notes': 'Applied to 525 winglet price each year'},
     {'Assumption': 'Base COGS per 525 Winglet (2026)', 'Value': f"{base_cogs_k}", 'Units': '$k/winglet', 'Type': 'Slider', 'Notes': 'Starting COGS per 525 winglet in 2026'},
-    {'Assumption': 'Annual 525 COGS Escalation', 'Value': f"{cogs_escalation * 100:.1f}%", 'Units': '%', 'Type': 'Slider', 'Notes': 'Applied to 525 COGS per winglet each year'},
     {'Assumption': '525 Winglet TAM', 'Value': '2,200 + 60/yr', 'Units': 'aircraft', 'Type': 'Hardwired', 'Notes': '2,200 existing 525 series (M2/CJ1/CJ2/CJ3/CJ3+) + 60 new per year (excludes CJ4/525C)'},
     {'Assumption': f'Base 510 Winglet Price ({mustang_revenue_start_year})', 'Value': f"{kit_510_price_base}", 'Units': '$k/winglet', 'Type': 'Slider', 'Notes': f'Fixed 510 winglet price starting {mustang_revenue_start_year}'},
     {'Assumption': '510 Winglet COGS', 'Value': f"{kit_510_cogs}", 'Units': '$k/winglet', 'Type': 'Slider', 'Notes': 'Fixed COGS per 510 winglet'},
@@ -421,7 +602,6 @@ assumptions_rows = [
     {'Assumption': '510 Certification Cost', 'Value': f"{mustang_cert_cost:.1f}", 'Units': '$M', 'Type': 'Slider', 'Notes': f'{mustang_cert_duration_qtrs}Q certification project ({mustang_cert_start_year} Q{mustang_cert_start_qtr}), ${mustang_cert_cost/mustang_cert_duration_years:.1f}M per year'},
     {'Assumption': '510 Investor Funding', 'Value': f"{investor_510_funding:.1f}", 'Units': '$M', 'Type': 'Hardwired', 'Notes': f'Investment in {mustang_cert_start_year} for inventory, flows to bottom line'},
     {'Assumption': f'Base 604 Winglet Price ({challenger_revenue_start_year})', 'Value': f"{kit_604_price_base}", 'Units': '$k/winglet', 'Type': 'Slider', 'Notes': f'Starting 604 winglet price in {challenger_revenue_start_year}'},
-    {'Assumption': 'Annual 604 Price Escalation', 'Value': f"{kit_604_price_escalation * 100:.1f}%", 'Units': '%', 'Type': 'Slider', 'Notes': 'Applied to 604 winglet price each year'},
     {'Assumption': '604 Winglet COGS', 'Value': f"{kit_604_cogs}", 'Units': '$k/winglet', 'Type': 'Slider', 'Notes': 'Fixed COGS per 604 winglet'},
     {'Assumption': '604 Winglet TAM', 'Value': '1,200 + 35/yr', 'Units': 'aircraft', 'Type': 'Hardwired', 'Notes': '1,200 existing Challenger 604/605/650 as of 2025 + 35 new Challenger 650 per year from 2026'},
     {'Assumption': '604 Certification Cost', 'Value': f"{challenger_cert_cost:.1f}", 'Units': '$M', 'Type': 'Slider', 'Notes': f'{challenger_cert_duration_qtrs}Q certification project ({challenger_cert_start_year} Q{challenger_cert_start_qtr}), ${challenger_cert_cost/challenger_cert_duration_years:.1f}M per year'},
@@ -434,6 +614,7 @@ assumptions_rows = [
     {'Assumption': 'Starlink Install Cost per Unit', 'Value': f"{starlink_install}", 'Units': '$k/unit', 'Type': 'Slider', 'Notes': 'Installation cost per Starlink unit'},
     {'Assumption': 'Starlink Certification Cost', 'Value': f"{starlink_cert_cost:.1f}", 'Units': '$M', 'Type': 'Slider', 'Notes': f'{starlink_cert_duration_qtrs}Q certification project ({starlink_cert_start_year} Q{starlink_cert_start_qtr}), ${starlink_cert_cost/starlink_cert_duration_years:.2f}M per year'},
     {'Assumption': 'Starlink Addressable Market', 'Value': '2,650 + 91/yr', 'Units': 'aircraft', 'Type': 'Hardwired', 'Notes': 'All 525 series + 510 aircraft + 60 new 525 + 31 new CJ4 (525C) per year'},
+    {'Assumption': 'Project Overhead Rate', 'Value': f"{project_overhead_rate * 100:.1f}%", 'Units': '%', 'Type': 'Slider', 'Notes': 'Administrative overhead applied to all project revenue (525, 510, 604, Starlink, custom projects)'},
     {'Assumption': 'Max Debt Available', 'Value': f"{debt_amount:.1f}", 'Units': '$M', 'Type': 'Slider', 'Notes': 'Debt facility cap'},
     {'Assumption': 'Debt APR', 'Value': f"{debt_apr * 100:.2f}%", 'Units': '%', 'Type': 'Slider', 'Notes': 'Applied to outstanding debt balance'},
     {'Assumption': 'Debt Term', 'Value': f"{debt_term_years}", 'Units': 'Years', 'Type': 'Slider', 'Notes': 'Debt amortization period'},
@@ -478,8 +659,8 @@ for yr in years:
         units = 0
     
     year_idx = yr - 2016
-    kit_price = (kit_price_base * 1000.0) * ((1 + kit_price_escalation) ** year_idx)
-    kit_cogs = (base_cogs_k * 1000.0) * ((1 + cogs_escalation) ** year_idx)
+    kit_price = (kit_price_base * 1000.0) * ((1 + aircraft_price_escalation) ** year_idx)
+    kit_cogs = (base_cogs_k * 1000.0) * ((1 + aircraft_cogs_escalation) ** year_idx)
     
     kit_revenue = units * kit_price / 1e6
     kit_cogs_total = units * kit_cogs / 1e6
@@ -536,7 +717,7 @@ for yr in years:
     
     # 604 pricing (starts in challenger_revenue_start_year, escalates annually)
     kit_604_year_idx = max(0, yr - challenger_revenue_start_year)
-    kit_604_price = (kit_604_price_base * 1000.0) * ((1 + kit_604_price_escalation) ** kit_604_year_idx)
+    kit_604_price = (kit_604_price_base * 1000.0) * ((1 + aircraft_price_escalation) ** kit_604_year_idx)
     kit_604_cogs_unit = kit_604_cogs * 1000.0
     
     kit_604_revenue = units_604 * kit_604_price / 1e6
@@ -581,6 +762,31 @@ for yr in years:
     starlink_tam = base_tam_starlink + ((new_525_per_year + new_cj4_per_year) * max(0, yr - 2016))
     starlink_penetration = (cum_starlink_units / starlink_tam * 100) if starlink_tam > 0 else 0.0
     
+    # Custom projects calculations
+    custom_revenue_total = 0.0
+    custom_cogs_total = 0.0
+    custom_cert_cost_total = 0.0
+    
+    for proj_name, params in custom_project_params.items():
+        if proj_name in custom_forecasts:
+            # Get units for this year
+            units_custom = custom_forecasts[proj_name].get(yr, 0)
+            
+            # Pricing (starts in revenue_start_year, escalates annually)
+            custom_year_idx = max(0, yr - params['revenue_start_year'])
+            custom_price = (params['price_base'] * 1000.0) * ((1 + params['price_escalation']) ** custom_year_idx)
+            custom_cogs_unit = params['cogs'] * 1000.0
+            
+            custom_revenue = units_custom * custom_price / 1e6
+            custom_cogs = units_custom * custom_cogs_unit / 1e6
+            
+            custom_revenue_total += custom_revenue
+            custom_cogs_total += custom_cogs
+            
+            # Certification costs (spread evenly over certification duration)
+            if params['cert_start_year'] <= yr < params['revenue_start_year']:
+                custom_cert_cost_total += params['cert_cost'] / params['cert_duration_years']
+    
     # Apply project enable/disable flags
     if not enable_525:
         kit_revenue = 0.0
@@ -600,12 +806,17 @@ for yr in years:
         cert_starlink_cost = 0.0
     
     # Total revenue and COGS
-    revenue = kit_revenue + kit_510_revenue + kit_604_revenue + eng_revenue + starlink_revenue
-    cogs = kit_cogs_total + kit_510_cogs_total + kit_604_cogs_total + eng_cogs_total + starlink_cogs_total + cert_510_cost + cert_starlink_cost + cert_604_cost
+    revenue = kit_revenue + kit_510_revenue + kit_604_revenue + eng_revenue + starlink_revenue + custom_revenue_total
+    cogs = kit_cogs_total + kit_510_cogs_total + kit_604_cogs_total + eng_cogs_total + starlink_cogs_total + cert_510_cost + cert_starlink_cost + cert_604_cost + custom_cogs_total + custom_cert_cost_total
     gross_profit = revenue - cogs
     
+    # Project overhead (administrative overhead as % of project revenue)
+    # Only applies to winglet and Starlink projects (not engineering services)
+    project_revenue = kit_revenue + kit_510_revenue + kit_604_revenue + starlink_revenue + custom_revenue_total
+    project_overhead = project_revenue * project_overhead_rate
+    
     # OpEx
-    opex_yr = opex.get(yr, 8.0)
+    opex_yr = opex.get(yr, 8.0) + project_overhead
     
     # EBITDA
     ebitda = gross_profit - opex_yr
@@ -684,6 +895,7 @@ for yr in years:
         'Total Revenue ($M)': round(revenue, 2),
         'Total COGS ($M)': round(cogs, 2),
         'Gross Profit ($M)': round(gross_profit, 2),
+        'Project Overhead ($M)': round(project_overhead, 2),
         'OpEx ($M)': round(opex_yr, 1),
         'EBITDA ($M)': round(ebitda, 2),
         'Debt Interest ($M)': round(debt_interest, 2),
